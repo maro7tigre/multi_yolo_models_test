@@ -24,5 +24,8 @@ python -m venv .venv
 With the virtual environment activated, install the dependencies:
 
 ```bash
-pip install opencv-python ultralytics
+pip install ultralytics opencv-python pillow numpy
+pip install torch torchvision  # For PyTorch models
+pip install onnxruntime  # For ONNX models
+pip install tensorflow  # For TF/Keras models
 ```

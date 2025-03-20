@@ -1,57 +1,212 @@
 import tkinter as tk
 from tkinter import ttk
 import cv2
+import numpy as np
 import threading
 import time
 import os
+import importlib
 from PIL import Image, ImageTk
-from ultralytics import YOLO
 
 # MARK: Model Manager
 class ModelManager:
-    """Handles the loading and management of YOLO models"""
+    """Handles loading and inference for various model types"""
     
     def __init__(self):
-        # Standard YOLOv8 models
-        self.standard_models = [
+        # Check available frameworks
+        self.frameworks = self._check_available_frameworks()
+        print(f"Available frameworks: {self.frameworks}")
+        
+        # Initialize model categories and formats
+        self.model_formats = {
+            "pt": {"name": "PyTorch", "supported": "torch" in self.frameworks},
+            "onnx": {"name": "ONNX", "supported": "onnxruntime" in self.frameworks},
+            "h5": {"name": "TensorFlow/Keras", "supported": "tensorflow" in self.frameworks},
+            "tflite": {"name": "TensorFlow Lite", "supported": "tensorflow" in self.frameworks},
+            "pb": {"name": "TensorFlow SavedModel", "supported": "tensorflow" in self.frameworks},
+        }
+        
+        # Scan for available models
+        self.available_models = self._scan_models()
+        
+        # Store loaded model instances
+        self.model_instances = {}
+        
+        # Standard YOLOv8 models (for reference)
+        self.standard_yolo_models = [
             "yolov8n.pt", 
             "yolov8s.pt", 
             "yolov8m.pt", 
             "yolov8l.pt", 
             "yolov8x.pt"
         ]
-        # Check which models are available locally
-        self.available_models = self._get_available_models()
-        # Dict to store loaded model instances
-        self.model_instances = {}
     
-    def _get_available_models(self):
-        """Check which models are available locally"""
-        available = []
+    def _check_available_frameworks(self):
+        """Check which ML frameworks are available"""
+        frameworks = []
+        
+        # Check for PyTorch
+        try:
+            importlib.import_module("torch")
+            frameworks.append("torch")
+        except ImportError:
+            pass
+        
+        # Check for TensorFlow
+        try:
+            importlib.import_module("tensorflow")
+            frameworks.append("tensorflow")
+        except ImportError:
+            pass
+        
+        # Check for ONNX Runtime
+        try:
+            importlib.import_module("onnxruntime")
+            frameworks.append("onnxruntime")
+        except ImportError:
+            pass
+        
+        # Check for Ultralytics YOLO
+        try:
+            importlib.import_module("ultralytics")
+            frameworks.append("ultralytics")
+        except ImportError:
+            pass
+        
+        return frameworks
+    
+    def _scan_models(self):
+        """Scan for available model files and categorize them"""
+        models = {}
         for file in os.listdir('.'):
-            if file.endswith('.pt'):
-                available.append(file)
-        return available
+            ext = file.split('.')[-1].lower()
+            if ext in self.model_formats:
+                if self.model_formats[ext]["supported"]:
+                    if ext not in models:
+                        models[ext] = []
+                    models[ext].append(file)
+        return models
+    
+    def get_all_model_files(self):
+        """Get all available model files"""
+        all_models = []
+        for model_type in self.available_models.values():
+            all_models.extend(model_type)
+        return all_models
     
     def load_model(self, model_name):
-        """Load a YOLO model by name (will download if not available)"""
+        """Load a model based on its file extension"""
         if model_name in self.model_instances:
             return self.model_instances[model_name]
         
+        # Extract file extension
+        ext = model_name.split('.')[-1].lower()
+        
+        if ext not in self.model_formats or not self.model_formats[ext]["supported"]:
+            raise ValueError(f"Unsupported model format: {ext}")
+        
         try:
-            # YOLO will download the model if it's not available locally
-            model = YOLO(model_name)
+            # Load model based on extension
+            if ext == "pt":
+                model = self._load_pytorch_model(model_name)
+            elif ext == "onnx":
+                model = self._load_onnx_model(model_name)
+            elif ext in ["h5", "pb"]:
+                model = self._load_tensorflow_model(model_name)
+            elif ext == "tflite":
+                model = self._load_tflite_model(model_name)
+            else:
+                raise ValueError(f"Unsupported model format: {ext}")
+            
+            # Store the loaded model
             self.model_instances[model_name] = model
-            # Add to available models if not already there
-            if model_name not in self.available_models:
-                self.available_models.append(model_name)
             return model
+            
         except Exception as e:
-            print(f"Error loading model: {e}")
+            print(f"Error loading model {model_name}: {e}")
             return None
     
+    def _load_pytorch_model(self, model_name):
+        """Load a PyTorch model"""
+        try:
+            # Check if it's a YOLO model
+            if "yolo" in model_name.lower() and "ultralytics" in self.frameworks:
+                from ultralytics import YOLO
+                return {"type": "yolo", "model": YOLO(model_name)}
+            else:
+                import torch # type: ignore
+                model = torch.load(model_name, map_location=torch.device('cpu'))
+                if hasattr(model, 'eval'):
+                    model.eval()
+                return {"type": "pytorch", "model": model}
+        except Exception as e:
+            print(f"Error loading PyTorch model: {e}")
+            raise
+    
+    def _load_onnx_model(self, model_name):
+        """Load an ONNX model"""
+        try:
+            import onnxruntime as ort # type: ignore
+            session = ort.InferenceSession(model_name)
+            
+            # Get model input details
+            model_inputs = session.get_inputs()
+            input_names = [input.name for input in model_inputs]
+            input_shapes = [input.shape for input in model_inputs]
+            
+            return {
+                "type": "onnx",
+                "model": session,
+                "input_names": input_names,
+                "input_shapes": input_shapes
+            }
+        except Exception as e:
+            print(f"Error loading ONNX model: {e}")
+            raise
+    
+    def _load_tensorflow_model(self, model_name):
+        """Load a TensorFlow/Keras model"""
+        try:
+            import tensorflow as tf  # type: ignore
+            
+            # Check if it's a SavedModel directory or .h5 file
+            if model_name.endswith('.pb') or os.path.isdir(model_name):
+                model = tf.saved_model.load(model_name)
+                model_type = "tf_saved_model"
+            else:  # .h5 file
+                model = tf.keras.models.load_model(model_name)
+                model_type = "keras"
+            
+            return {"type": model_type, "model": model}
+        except Exception as e:
+            print(f"Error loading TensorFlow model: {e}")
+            raise
+    
+    def _load_tflite_model(self, model_name):
+        """Load a TensorFlow Lite model"""
+        try:
+            import tensorflow as tf # type: ignore
+            
+            # Load the TFLite model
+            interpreter = tf.lite.Interpreter(model_path=model_name)
+            interpreter.allocate_tensors()
+            
+            # Get input and output details
+            input_details = interpreter.get_input_details()
+            output_details = interpreter.get_output_details()
+            
+            return {
+                "type": "tflite",
+                "model": interpreter,
+                "input_details": input_details,
+                "output_details": output_details
+            }
+        except Exception as e:
+            print(f"Error loading TFLite model: {e}")
+            raise
+    
     def predict(self, frame, model_name):
-        """Run inference on a frame using specified model"""
+        """Run inference on a frame using the specified model"""
         if model_name not in self.model_instances:
             model = self.load_model(model_name)
             if model is None:
@@ -59,10 +214,137 @@ class ModelManager:
         else:
             model = self.model_instances[model_name]
         
-        results = model(frame)
-        annotated_frame = results[0].plot()
+        model_type = model["type"]
         
-        return annotated_frame, results[0]
+        try:
+            # Different inference based on model type
+            if model_type == "yolo":
+                results = model["model"](frame)
+                annotated_frame = results[0].plot()
+                return annotated_frame, results[0]
+            
+            elif model_type == "pytorch":
+                # Basic PyTorch inference (needs customization for specific models)
+                import torch # type: ignore
+                import torchvision.transforms as transforms # type: ignore
+                
+                # Preprocess: Convert to tensor and normalize
+                transform = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=[0.485, 0.456, 0.406], 
+                                         std=[0.229, 0.224, 0.225])
+                ])
+                
+                # Convert frame to RGB and apply transform
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                tensor_img = transform(Image.fromarray(rgb_frame)).unsqueeze(0)
+                
+                # Run inference
+                with torch.no_grad():
+                    outputs = model["model"](tensor_img)
+                
+                # For visualization, just return the original frame
+                # This should be customized for actual model output visualization
+                return frame, outputs
+            
+            elif model_type == "onnx":
+                # ONNX Runtime inference
+                # Preprocess frame for the ONNX model
+                input_name = model["input_names"][0]
+                input_shape = model["input_shapes"][0]
+                
+                # Resize image to match model input
+                if len(input_shape) == 4:  # Batch, Height, Width, Channels
+                    height, width = input_shape[1:3]
+                    if height > 0 and width > 0:
+                        resized = cv2.resize(frame, (width, height))
+                    else:
+                        resized = frame
+                else:
+                    resized = frame
+                
+                # Convert BGR to RGB
+                rgb_img = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+                
+                # Normalize pixel values
+                img_data = rgb_img.astype(np.float32) / 255.0
+                
+                # Add batch dimension
+                img_data = np.expand_dims(img_data, 0)
+                
+                # Run inference
+                outputs = model["model"].run(None, {input_name: img_data})
+                
+                # For visualization, just return the original frame
+                # This should be customized for actual model output visualization
+                return frame, outputs
+            
+            elif model_type in ["keras", "tf_saved_model"]:
+                # TensorFlow model inference
+                import tensorflow as tf # type: ignore
+                
+                # Preprocess frame (assuming standard image input)
+                img = cv2.resize(frame, (224, 224))
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                img = img.astype(np.float32) / 255.0
+                img = np.expand_dims(img, 0)  # Add batch dimension
+                
+                # Run inference
+                if model_type == "keras":
+                    preds = model["model"].predict(img)
+                else:  # tf_saved_model
+                    infer = model["model"].signatures["serving_default"]
+                    preds = infer(tf.constant(img))
+                
+                # For visualization, just return the original frame
+                # This should be customized for actual model output visualization
+                return frame, preds
+            
+            elif model_type == "tflite":
+                # TensorFlow Lite inference
+                interpreter = model["model"]
+                input_details = model["input_details"]
+                output_details = model["output_details"]
+                
+                # Preprocess frame
+                input_shape = input_details[0]['shape']
+                if len(input_shape) == 4:  # Batch, Height, Width, Channels
+                    height, width = input_shape[1:3]
+                    if height > 0 and width > 0:
+                        img = cv2.resize(frame, (width, height))
+                    else:
+                        img = frame
+                else:
+                    img = frame
+                
+                # Further preprocessing depends on the specific model
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                img = img.astype(np.float32) / 255.0
+                img = np.expand_dims(img, 0)  # Add batch dimension
+                
+                # Set the input tensor
+                interpreter.set_tensor(input_details[0]['index'], img)
+                
+                # Run inference
+                interpreter.invoke()
+                
+                # Get the output tensors
+                outputs = []
+                for output_detail in output_details:
+                    output = interpreter.get_tensor(output_detail['index'])
+                    outputs.append(output)
+                
+                # For visualization, just return the original frame
+                # This should be customized for actual model output visualization
+                return frame, outputs
+            
+            else:
+                return frame, None
+                
+        except Exception as e:
+            print(f"Error during inference with {model_name}: {e}")
+            # Return original frame if inference fails
+            return frame, None
 
 
 # MARK: Camera Manager
@@ -248,11 +530,278 @@ class DisplayPanel:
         return None
 
 
+# MARK: Model Selection Dialog
+class ModelSelectionDialog:
+    """Dialog for selecting and configuring models"""
+    
+    def __init__(self, parent, model_manager, callback):
+        self.parent = parent
+        self.model_manager = model_manager
+        self.callback = callback
+        self.dialog = None
+        self.model_vars = {}
+        self.installing = False
+    
+    def show(self):
+        """Show the model selection dialog"""
+        self.dialog = tk.Toplevel(self.parent)
+        self.dialog.title("Install Models")
+        self.dialog.geometry("600x400")
+        self.dialog.transient(self.parent)
+        self.dialog.grab_set()
+        
+        # Main frame
+        frame = ttk.Frame(self.dialog, padding="10")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Create notebook for different model types
+        self.notebook = ttk.Notebook(frame)
+        self.notebook.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        # Initialize model variables
+        self.model_vars = {}
+        
+        # Create tabs for each supported model type
+        self._create_model_tabs()
+        
+        # Button frame
+        button_frame = ttk.Frame(frame)
+        button_frame.pack(fill=tk.X, pady=10)
+        
+        # Refresh button
+        ttk.Button(
+            button_frame,
+            text="Refresh Models",
+            command=self._refresh_models
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # Apply button
+        ttk.Button(
+            button_frame,
+            text="Apply",
+            command=self._apply_selection
+        ).pack(side=tk.RIGHT, padx=5)
+        
+        # Cancel button
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            command=self.dialog.destroy
+        ).pack(side=tk.RIGHT, padx=5)
+    
+    def _create_model_tabs(self):
+        """Create the tabs for each model type"""
+        # Clear existing tabs
+        for tab in self.notebook.tabs():
+            self.notebook.forget(tab)
+        
+        # Create tabs for each supported model type
+        for ext, formats in self.model_manager.model_formats.items():
+            if formats["supported"]:
+                tab = ttk.Frame(self.notebook, padding=10)
+                self.notebook.add(tab, text=formats["name"])
+                
+                # Create scrollable frame for models
+                scroll_frame = ttk.Frame(tab)
+                scroll_frame.pack(fill=tk.BOTH, expand=True)
+                
+                # Add scrollbar
+                scrollbar = ttk.Scrollbar(scroll_frame)
+                scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+                
+                # Create canvas for scrolling
+                canvas = tk.Canvas(scroll_frame, yscrollcommand=scrollbar.set)
+                canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+                
+                # Configure scrollbar
+                scrollbar.config(command=canvas.yview)
+                
+                # Create inner frame for models
+                inner_frame = ttk.Frame(canvas)
+                canvas.create_window((0, 0), window=inner_frame, anchor=tk.NW)
+                
+                # Add models
+                models = self.model_manager.available_models.get(ext, [])
+                
+                if not models:
+                    ttk.Label(
+                        inner_frame, 
+                        text=f"No {formats['name']} models found.\nPlace models in the application directory.",
+                        foreground="gray"
+                    ).pack(pady=10)
+                
+                # Add existing models with checkboxes
+                if models:
+                    ttk.Label(
+                        inner_frame,
+                        text="Available Models:",
+                        font=("Arial", 10, "bold")
+                    ).pack(anchor=tk.W, pady=(0, 5))
+                
+                for model in models:
+                    var = tk.BooleanVar(value=True)  # Selected by default
+                    
+                    cb = ttk.Checkbutton(
+                        inner_frame,
+                        text=model,
+                        variable=var
+                    )
+                    cb.pack(anchor=tk.W, padx=5, pady=2)
+                    
+                    self.model_vars[model] = var
+                
+                # Add predefined models section for PyTorch/YOLO with install buttons
+                if ext == "pt" and "ultralytics" in self.model_manager.frameworks:
+                    ttk.Separator(inner_frame).pack(fill=tk.X, pady=10)
+                    
+                    ttk.Label(
+                        inner_frame,
+                        text="Standard YOLOv8 Models:",
+                        font=("Arial", 10, "bold")
+                    ).pack(anchor=tk.W, pady=(10, 5))
+                    
+                    for model in self.model_manager.standard_yolo_models:
+                        model_frame = ttk.Frame(inner_frame)
+                        model_frame.pack(fill=tk.X, padx=5, pady=2)
+                        
+                        # Check if model is already available
+                        installed = model in models
+                        
+                        if installed:
+                            # Use checkbox for installed models
+                            var = tk.BooleanVar(value=True)
+                            cb = ttk.Checkbutton(
+                                model_frame,
+                                text=model,
+                                variable=var
+                            )
+                            cb.pack(side=tk.LEFT)
+                            self.model_vars[model] = var
+                            
+                            status_label = ttk.Label(
+                                model_frame,
+                                text="Installed",
+                                foreground="green"
+                            )
+                            status_label.pack(side=tk.RIGHT)
+                        else:
+                            # Use label and install button for non-installed models
+                            ttk.Label(
+                                model_frame,
+                                text=model,
+                            ).pack(side=tk.LEFT)
+                            
+                            install_btn = ttk.Button(
+                                model_frame,
+                                text="Install",
+                                command=lambda m=model: self._install_model(m)
+                            )
+                            install_btn.pack(side=tk.RIGHT)
+                
+                # Configure canvas scrolling
+                inner_frame.update_idletasks()
+                canvas.config(scrollregion=canvas.bbox("all"))
+                
+                # Bind mousewheel to scroll - safer implementation
+                def _on_mousewheel(event, canvas=canvas):
+                    try:
+                        canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+                    except Exception as e:
+                        print(f"Scrolling error: {e}")
+                
+                # Bind event to this specific canvas
+                canvas.bind("<MouseWheel>", _on_mousewheel)
+    
+    def _refresh_models(self):
+        """Refresh the list of available models"""
+        # Scan for models again
+        self.model_manager._scan_models()
+        
+        # Recreate the tabs
+        self._create_model_tabs()
+    
+    def _install_model(self, model_name):
+        """Install a model"""
+        if self.installing:
+            return
+        
+        self.installing = True
+        
+        # Create a progress dialog
+        progress_dialog = tk.Toplevel(self.dialog)
+        progress_dialog.title("Installing Model")
+        progress_dialog.geometry("300x100")
+        progress_dialog.transient(self.dialog)
+        progress_dialog.grab_set()
+        
+        # Progress label
+        progress_label = ttk.Label(
+            progress_dialog,
+            text=f"Installing {model_name}...\nThis may take a while.",
+            wraplength=280
+        )
+        progress_label.pack(pady=(10, 5))
+        
+        # Progress bar
+        progress_var = tk.DoubleVar(value=0)
+        progress_bar = ttk.Progressbar(
+            progress_dialog,
+            orient=tk.HORIZONTAL,
+            mode='indeterminate',
+            variable=progress_var
+        )
+        progress_bar.pack(fill=tk.X, padx=10, pady=5)
+        progress_bar.start()
+        
+        # Start installation in a thread
+        def install_thread():
+            try:
+                # Use Ultralytics to load the model (which will download it if not available)
+                from ultralytics import YOLO # type: ignore
+                model = YOLO(model_name)
+                
+                # Add to available models
+                ext = model_name.split('.')[-1].lower()
+                if ext not in self.model_manager.available_models:
+                    self.model_manager.available_models[ext] = []
+                if model_name not in self.model_manager.available_models[ext]:
+                    self.model_manager.available_models[ext].append(model_name)
+                
+                # Store model instance
+                self.model_manager.model_instances[model_name] = {"type": "yolo", "model": model}
+                
+                # Update UI
+                progress_dialog.after(0, lambda: progress_dialog.destroy())
+                self.dialog.after(0, self._refresh_models)
+            except Exception as e:
+                progress_dialog.after(0, lambda: progress_label.config(
+                    text=f"Error installing {model_name}: {str(e)}",
+                    foreground="red"
+                ))
+                progress_dialog.after(0, lambda: progress_bar.stop())
+            finally:
+                self.installing = False
+        
+        threading.Thread(target=install_thread, daemon=True).start()
+    
+    def _apply_selection(self):
+        """Apply the selected models"""
+        selected_models = [
+            model for model, var in self.model_vars.items()
+            if var.get()
+        ]
+        
+        if self.callback:
+            self.callback(selected_models)
+        
+        self.dialog.destroy()
+
+
 # MARK: Main Application
 class YOLOApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Object Detection")
+        self.root.title("Multi-Model Object Detection")
         self.root.geometry("1280x720")
         
         # Create model and camera managers
@@ -262,6 +811,7 @@ class YOLOApp:
         # Tracking variables
         self.running = False
         self.detection_thread = None
+        self.selected_models = []
         
         # Create the UI
         self._create_ui()
@@ -291,31 +841,86 @@ class YOLOApp:
         if list(self.camera_manager.available_cameras.keys()):
             camera_combo.current(0)
         
-        # Model selection
-        model_frame = ttk.LabelFrame(control_panel, text="Available Models")
-        model_frame.pack(fill=tk.X, pady=10)
+        # Model selection button
+        ttk.Button(
+            control_panel,
+            text="Install Models",
+            command=self._show_model_dialog
+        ).pack(fill=tk.X, pady=10)
         
-        # Checkboxes for each model
-        self.model_vars = {}
-        for model in self.model_manager.standard_models:
-            var = tk.BooleanVar(value=model in self.model_manager.available_models)
+        # Framework status
+        framework_frame = ttk.LabelFrame(control_panel, text="Available Frameworks")
+        framework_frame.pack(fill=tk.X, pady=10)
+        
+        for framework in ["torch", "tensorflow", "onnxruntime", "ultralytics"]:
+            available = framework in self.model_manager.frameworks
+            status = "Available" if available else "Not Installed"
+            color = "green" if available else "red"
             
-            cb = ttk.Checkbutton(
-                model_frame,
-                text=model,
-                variable=var,
-                command=self._update_models
-            )
-            cb.pack(anchor=tk.W, padx=5, pady=2)
-            self.model_vars[model] = var
+            frame_row = ttk.Frame(framework_frame)
+            frame_row.pack(fill=tk.X, padx=5, pady=2)
+            
+            ttk.Label(
+                frame_row, 
+                text=framework.capitalize() + ":",
+                width=12,
+                anchor=tk.W
+            ).pack(side=tk.LEFT)
+            
+            ttk.Label(
+                frame_row,
+                text=status,
+                foreground=color
+            ).pack(side=tk.LEFT)
         
-        # Info label
-        ttk.Label(
-            model_frame,
-            text="Note: Models will be downloaded\nautomatically when needed.",
-            foreground="gray",
-            justify=tk.LEFT
-        ).pack(anchor=tk.W, padx=5, pady=5)
+        # Selected models display with scrollbar
+        models_frame_container = ttk.Frame(control_panel)
+        models_frame_container.pack(fill=tk.X, pady=10)
+        
+        # Selected models display with scrollbar
+        ttk.Label(models_frame_container, text="Selected Models:").pack(anchor=tk.W)
+        
+        # Create frame with scrollbar
+        models_scroll_frame = ttk.Frame(models_frame_container)
+        models_scroll_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+        
+        models_scrollbar = ttk.Scrollbar(models_scroll_frame)
+        models_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Create canvas for scrolling
+        models_canvas = tk.Canvas(models_scroll_frame, height=100, yscrollcommand=models_scrollbar.set)
+        models_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Configure scrollbar
+        models_scrollbar.config(command=models_canvas.yview)
+        
+        # Create inner frame for models
+        self.models_frame = ttk.Frame(models_canvas)
+        models_canvas.create_window((0, 0), window=self.models_frame, anchor=tk.NW, width=models_canvas.winfo_width())
+        
+        # Configure canvas scrolling
+        def configure_models_canvas(event):
+            models_canvas.configure(scrollregion=models_canvas.bbox("all"))
+            models_canvas.itemconfig(1, width=models_canvas.winfo_width())
+        
+        self.models_frame.bind("<Configure>", configure_models_canvas)
+        
+        # Initially show a message
+        self.no_models_label = ttk.Label(
+            self.models_frame,
+            text="No models selected",
+            foreground="gray"
+        )
+        self.no_models_label.pack(pady=10)
+        
+        # Bind mousewheel to scroll
+        def _on_mousewheel(event):
+            try:
+                models_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            except Exception as e:
+                print(f"Scrolling error: {e}")
+        
+        models_canvas.bind("<MouseWheel>", _on_mousewheel)
         
         # Start/Stop button
         self.start_stop_var = tk.StringVar(value="Start")
@@ -350,26 +955,69 @@ class YOLOApp:
             panel = DisplayPanel(
                 display_frame,
                 i + 1,
-                self.get_selected_models()
+                self.selected_models
             )
             panel.frame.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
             self.panels.append(panel)
         
+        # Initially, select standard YOLO models
+        self._on_models_selected(self.model_manager.standard_yolo_models)
+        
         # Bind window close event
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
     
-    def _update_models(self):
-        """Update the list of selected models"""
-        # Get the list of selected models
-        models = self.get_selected_models()
-        
-        # Update each display panel
-        for panel in self.panels:
-            panel.update_models(models)
+    def _show_model_dialog(self):
+        """Show the model selection dialog"""
+        dialog = ModelSelectionDialog(self.root, self.model_manager, self._on_models_selected)
+        dialog.show()
     
-    def get_selected_models(self):
-        """Get list of models that are selected"""
-        return [model for model, var in self.model_vars.items() if var.get()]
+    def _on_models_selected(self, selected_models):
+        """Handle model selection from dialog"""
+        self.selected_models = selected_models
+        
+        # Update display panels
+        for panel in self.panels:
+            panel.update_models(selected_models)
+        
+        # Update selected models display
+        for widget in self.models_frame.winfo_children():
+            widget.destroy()
+        
+        if not selected_models:
+            self.no_models_label = ttk.Label(
+                self.models_frame,
+                text="No models selected",
+                foreground="gray"
+            )
+            self.no_models_label.pack(pady=10)
+        else:
+            for model in selected_models:
+                ext = model.split('.')[-1].lower()
+                
+                if ext in self.model_manager.model_formats:
+                    frame_name = self.model_manager.model_formats[ext]["name"]
+                else:
+                    frame_name = "Unknown"
+                
+                model_frame = ttk.Frame(self.models_frame)
+                model_frame.pack(fill=tk.X, padx=5, pady=2)
+                
+                ttk.Label(
+                    model_frame,
+                    text=model,
+                    anchor=tk.W
+                ).pack(side=tk.LEFT)
+                
+                ttk.Label(
+                    model_frame,
+                    text=f"({frame_name})",
+                    foreground="gray"
+                ).pack(side=tk.RIGHT)
+            
+            # Update the scrollregion after adding models
+            self.models_frame.update_idletasks()
+            canvas = self.models_frame.master
+            canvas.configure(scrollregion=canvas.bbox("all"))
     
     def toggle_detection(self):
         """Toggle between starting and stopping detection"""
@@ -387,6 +1035,10 @@ class YOLOApp:
             
             if not camera_name:
                 self.status_var.set("Error: No camera selected")
+                return
+            
+            if not self.selected_models:
+                self.status_var.set("Error: No models selected")
                 return
             
             # Open camera
