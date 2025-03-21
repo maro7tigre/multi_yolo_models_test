@@ -1,4 +1,7 @@
 from ultralytics import YOLO
 
-model = YOLO("yolov8n-cls.pt")  # or s/m/l/x
-model.train(data="dataset", epochs=25)
+# Load the heavy classification model
+model = YOLO('yolov8x-cls.pt')
+
+# Train the model using your custom dataset configuration
+model.train(data='data.yaml', epochs=50, imgsz=224)

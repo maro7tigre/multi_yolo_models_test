@@ -1,0 +1,6 @@
+# data.yaml
+path: dataset           # Root directory of your dataset
+train: train            # Folder with training images (each subfolder should be a class)
+val: val                # Folder with validation images
+nc: 5                   # Number of classes
+names: ['cardboard', 'glass', 'metal', 'paper', 'plastic']  # List of class names
