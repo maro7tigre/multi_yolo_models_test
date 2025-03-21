@@ -31,11 +31,16 @@ pip install tensorflow  # For TF/Keras models
 ```
 
 ## 4. Project Structure
-- `main_multiplatforms.py`: The main script to run the application.
-- `main.py`: a simplified version of the app for yolo models
+- `main_multiplatforms.py`: The script to run the multi platforms application.
 - `complete_dataset/`: Contains dataset provided by [trashNet](https://github.com/garythung/trashnet.git)
 - `helper_split_train_val.py`: Scripts to split the dataset into train and validation sets(you need to extract `complete_dataset` first).
 - `train_classifier.py`: Script to train the classifier(you need to split train/val first).
+
+### main app :
+- `main_cam.py`: The main script to run the application for camera input.
+- `main_img.py`: The main script to run the application for images input.
+- `core.py`: The core script required for the main scripts...
+
 
 ## 5. Aknowledgements
 

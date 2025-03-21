@@ -163,3 +163,4 @@ cython_debug/
 trashnet/
 dataset/*
 complete_dataset/*
+.temp/
