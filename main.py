@@ -69,18 +69,28 @@ class YOLOModelManager:
         if model_name not in self.model_instances:
             model = self.load_model(model_name)
             if model is None:
-                return frame, None
+                return frame, None, False
         else:
             model = self.model_instances[model_name]
         
         try:
+            # Check if this is a classification model based on the model name
+            is_cls_model = "-cls" in model_name.lower()
+            
             results = model(frame)
-            annotated_frame = results[0].plot()
-            return annotated_frame, results[0]
+            
+            if is_cls_model:
+                # For classification models, we'll return the original frame and results
+                # The third parameter indicates this is a classification model
+                return frame, results[0], True
+            else:
+                # For detection models, return the annotated frame as before
+                annotated_frame = results[0].plot()
+                return annotated_frame, results[0], False
         except Exception as e:
             print(f"Error during inference with {model_name}: {e}")
             # Return original frame if inference fails
-            return frame, None
+            return frame, None, False
 
 
 # MARK: Camera Manager
@@ -204,13 +214,22 @@ class DisplayPanel:
         elif display_type == "Camera Feed":
             # Display raw camera feed
             display_frame = camera_frame
+            self._display_image(display_frame)
         
         else:
             # Display model processed feed
             model_name = display_type
             try:
                 # Process with the selected model
-                display_frame, _ = model_manager.predict(camera_frame, model_name)
+                display_frame, results, is_cls_model = model_manager.predict(camera_frame, model_name)
+                
+                if is_cls_model and results is not None:
+                    # For classification models, display text results instead of image
+                    self._display_cls_results(camera_frame, results)
+                else:
+                    # For detection models, display the annotated image
+                    self._display_image(display_frame)
+                                
             except Exception as e:
                 # If model processing fails, show an error
                 self.canvas.delete("all")
@@ -223,9 +242,11 @@ class DisplayPanel:
                     width=self.canvas.winfo_width() - 20
                 )
                 return
-        
+
+    def _display_image(self, frame):
+        """Display an image frame on the canvas"""
         # Convert frame to Tkinter PhotoImage
-        self.photo_img = self._convert_frame_to_tk(display_frame)
+        self.photo_img = self._convert_frame_to_tk(frame)
         
         if self.photo_img:
             # Display the image
@@ -235,7 +256,83 @@ class DisplayPanel:
                 self.canvas.winfo_height() // 2,
                 image=self.photo_img
             )
-    
+
+    def _display_cls_results(self, frame, results):
+        """Display classification results as text"""
+        self.canvas.delete("all")
+        
+        # Draw a dark background
+        w = self.canvas.winfo_width()
+        h = self.canvas.winfo_height()
+        self.canvas.create_rectangle(0, 0, w, h, fill="black")
+        
+        # Start y position for text
+        y_pos = 20
+        
+        # Display title
+        self.canvas.create_text(
+            w // 2, 
+            y_pos,
+            text="Classification Results",
+            fill="white",
+            font=('Arial', 16, 'bold')
+        )
+        y_pos += 40
+        
+        # Get top 5 predictions from the results
+        try:
+            # Extract class predictions from the results
+            probs = results.probs
+            
+            # Get top 5 class indices and their probabilities
+            top_indices = probs.top5
+            top_probs = probs.top5conf
+            
+            # Get class names
+            names = results.names
+            
+            # Display each prediction
+            for i in range(min(5, len(top_indices))):
+                class_idx = top_indices[i]
+                prob = top_probs[i] * 100  # Convert to percentage
+                class_name = names[class_idx]
+                
+                # Create colored confidence indicator
+                if prob > 75:
+                    color = "#4CAF50"  # Green for high confidence
+                elif prob > 50:
+                    color = "#FFC107"  # Amber for medium confidence
+                else:
+                    color = "#F44336"  # Red for low confidence
+                
+                # Draw confidence bar
+                bar_width = int((w - 60) * (prob / 100))
+                self.canvas.create_rectangle(
+                    30, y_pos+5, 30 + bar_width, y_pos+25, 
+                    fill=color, outline=""
+                )
+                
+                # Display class name and probability
+                self.canvas.create_text(
+                    w // 2, 
+                    y_pos + 15,
+                    text=f"{class_name}: {prob:.1f}%",
+                    fill="white",
+                    font=('Arial', 12)
+                )
+                
+                y_pos += 30
+            
+        except Exception as e:
+            self.canvas.create_text(
+                w // 2, 
+                h // 2,
+                text=f"Error processing results: {str(e)}",
+                fill="red",
+                font=('Arial', 12),
+                width=w - 40
+            )
+            
     def _convert_frame_to_tk(self, frame):
         """Convert OpenCV frame to Tkinter PhotoImage"""
         # Get canvas dimensions
