@@ -29,3 +29,14 @@ pip install torch torchvision  # For PyTorch models
 pip install onnxruntime  # For ONNX models
 pip install tensorflow  # For TF/Keras models
 ```
+
+## 4. Project Structure
+- `main_multiplatforms.py`: The main script to run the application.
+- `main.py`: a simplified version of the app for yolo models
+- `complete_dataset/`: Contains dataset provided by [trashNet](https://github.com/garythung/trashnet.git)
+- `helper_split_train_val.py`: Scripts to split the dataset into train and validation sets(you need to extract `complete_dataset` first).
+- `train_classifier.py`: Script to train the classifier(you need to split train/val first).
+
+## 5. Aknowledgements
+
+the `dataset/` and `complete_dataset` directory is provided by [trashNet](https://github.com/garythung/trashnet.git) under MIT License.
