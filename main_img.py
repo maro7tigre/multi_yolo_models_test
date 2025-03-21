@@ -4,6 +4,9 @@ import cv2
 import os
 import threading
 import time
+import shutil
+import random
+import glob
 from PIL import Image, ImageTk
 
 # Import the YOLOModelManager and DisplayPanel from core.py
@@ -26,6 +29,10 @@ class YOLOImageAnalyzerApp:
         self.analyzing = False
         self.results_dict = {}  # Store results for all models
         
+        # Set up temp directory for random images
+        self.temp_dir = os.path.join('.', '.temp')
+        os.makedirs(self.temp_dir, exist_ok=True)
+        
         # Create the UI
         self._create_ui()
     
@@ -47,6 +54,12 @@ class YOLOImageAnalyzerApp:
             file_frame,
             text="Open Images",
             command=self.open_images
+        ).pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Button(
+            file_frame,
+            text="Get Random Images",
+            command=self.get_random_images
         ).pack(fill=tk.X, padx=5, pady=5)
         
         ttk.Button(
@@ -413,6 +426,128 @@ class YOLOImageAnalyzerApp:
             elif display_type != "None" and display_type in self.results_dict:
                 # Show model results
                 panel.update_frame(image, None, self.results_dict)
+    
+    def get_random_images(self):
+        """Get random images from dataset/val subdirectories"""
+        # Check if dataset/val exists
+        dataset_path = os.path.join('.', 'dataset', 'val')
+        if not os.path.isdir(dataset_path):
+            messagebox.showwarning(
+                "Dataset Not Found", 
+                "The 'dataset/val' directory was not found. Please create it and add class subdirectories with images."
+            )
+            return
+        
+        # Clear temp directory
+        try:
+            if os.path.exists(self.temp_dir):
+                for file in os.listdir(self.temp_dir):
+                    file_path = os.path.join(self.temp_dir, file)
+                    if os.path.isfile(file_path):
+                        os.unlink(file_path)
+            else:
+                os.makedirs(self.temp_dir)
+                
+            self.status_var.set("Cleared temp directory")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to clear temp directory: {str(e)}")
+            return
+        
+        # Get subdirectories (classes)
+        class_dirs = []
+        for item in os.listdir(dataset_path):
+            item_path = os.path.join(dataset_path, item)
+            if os.path.isdir(item_path):
+                class_dirs.append(item_path)
+        
+        if not class_dirs:
+            messagebox.showwarning(
+                "No Class Directories", 
+                "No class subdirectories found in 'dataset/val'. Please create class subdirectories with images."
+            )
+            return
+        
+        # Get random images from each class
+        all_images = []
+        for class_dir in class_dirs:
+            class_name = os.path.basename(class_dir)
+            # Get all image files
+            image_files = []
+            for ext in ('*.jpg', '*.jpeg', '*.png', '*.bmp'):
+                image_files.extend(glob.glob(os.path.join(class_dir, ext)))
+            
+            # Select up to 10 random images from this class
+            if image_files:
+                samples = min(10, len(image_files))
+                selected_images = random.sample(image_files, samples)
+                all_images.extend([(img, class_name) for img in selected_images])
+        
+        if not all_images:
+            messagebox.showwarning(
+                "No Images Found", 
+                "No images found in the class subdirectories. Please add images to the class directories."
+            )
+            return
+        
+        # Shuffle all selected images
+        random.shuffle(all_images)
+        
+        # Copy to temp directory with numbered prefixes
+        temp_image_paths = []
+        for i, (img_path, class_name) in enumerate(all_images):
+            # Get original filename and construct new filename
+            orig_name = os.path.basename(img_path)
+            extension = os.path.splitext(orig_name)[1]
+            new_name = f"{i+1:03d}_{class_name}{extension}"
+            dest_path = os.path.join(self.temp_dir, new_name)
+            
+            # Copy the file
+            try:
+                shutil.copy2(img_path, dest_path)
+                temp_image_paths.append(dest_path)
+            except Exception as e:
+                print(f"Error copying {img_path}: {e}")
+        
+        # Clear current images and load the temp images
+        self.clear_images(ask=False)
+        
+        # Open the temp images
+        if temp_image_paths:
+            count = 0
+            for path in temp_image_paths:
+                try:
+                    # Read image
+                    img_data = cv2.imread(path)
+                    if img_data is None:
+                        continue
+                    
+                    # Get file name
+                    name = os.path.basename(path)
+                    
+                    # Add to our list
+                    self.images.append({
+                        'path': path,
+                        'name': name,
+                        'data': img_data
+                    })
+                    
+                    # Add to listbox
+                    self.file_listbox.insert(tk.END, name)
+                    
+                    count += 1
+                except Exception as e:
+                    print(f"Error loading {path}: {e}")
+            
+            # Select first image if available
+            if count > 0:
+                self.file_listbox.selection_set(0)
+                self.current_image_index = 0
+                self.analyze_current_image()
+            
+            # Update status
+            self.status_var.set(f"Loaded {count} random images")
+        else:
+            self.status_var.set("No images were loaded")
     
     def on_closing(self):
         """Handle window closing event"""
