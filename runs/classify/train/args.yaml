@@ -1,8 +1,8 @@
 task: classify
 mode: train
-model: yolov8n-cls.pt
-data: dataset
-epochs: 25
+model: yolov8x-cls.yaml
+data: C://Users//marou//Documents//Github//YOLO_TEST//data.yaml
+epochs: 50
 time: null
 patience: 100
 batch: 16
@@ -15,7 +15,7 @@ workers: 8
 project: null
 name: train
 exist_ok: false
-pretrained: true
+pretrained: yolov8x-cls.pt
 optimizer: auto
 verbose: true
 seed: 0

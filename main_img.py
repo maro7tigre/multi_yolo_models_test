@@ -317,22 +317,29 @@ class YOLOImageAnalyzerApp:
             self.analyze_current_image()
     
     def analyze_current_image(self):
-        """Analyze the current image with all selected models"""
+        """Analyze the current image with only models selected in display panels"""
         if self.analyzing or self.current_image_index < 0:
             return
         
-        if not self.selected_models:
-            # Just display the original image
+        # Get the image to analyze
+        img_data = self.images[self.current_image_index]
+        image = img_data['data'].copy()
+        
+        # Collect which models are currently selected in the display panels
+        models_to_process = set()
+        for panel in self.panels:
+            display_type = panel.display_var.get()
+            if display_type != "None" and display_type != "Original" and display_type in self.selected_models:
+                models_to_process.add(display_type)
+        
+        # If no models are selected in panels, just display the original image
+        if not models_to_process:
             self.update_panels_with_original()
             return
         
         # Start analysis
         self.analyzing = True
         self.status_var.set("Analyzing image...")
-        
-        # Get the image to analyze
-        img_data = self.images[self.current_image_index]
-        image = img_data['data'].copy()
         
         # Clear results dictionary for this image
         self.results_dict = {}
@@ -344,8 +351,8 @@ class YOLOImageAnalyzerApp:
         # Run analysis in a thread
         def analysis_thread():
             try:
-                # Process each selected model
-                for model_name in self.selected_models:
+                # Process only the models shown in panels
+                for model_name in models_to_process:
                     if not self.analyzing:  # Check if analysis was cancelled
                         break
                     

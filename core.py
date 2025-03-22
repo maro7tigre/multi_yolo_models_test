@@ -24,11 +24,11 @@ class YOLOModelManager:
         
         # Standard YOLOv8 models
         self.standard_yolo_models = [
-            "yolov8n.pt", 
-            "yolov8s.pt", 
-            "yolov8m.pt", 
-            "yolov8l.pt", 
-            "yolov8x.pt"
+            "yolov8n-cls.pt", 
+            "yolov8s-cls.pt", 
+            "yolov8m-cls.pt", 
+            "yolov8l-cls.pt", 
+            "yolov8x-cls.pt"
         ]
     
     def _check_ultralytics(self):

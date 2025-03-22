@@ -164,3 +164,7 @@ trashnet/
 dataset/*
 complete_dataset/*
 .temp/
+annotations.csv
+data.yaml.zip
+runs/
+test_images/
