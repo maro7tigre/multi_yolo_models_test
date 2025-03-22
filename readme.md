@@ -33,7 +33,7 @@ pip install tensorflow  # For TF/Keras models
 ## 4. Project Structure
 - `main_multiplatforms.py`: The script to run the multi platforms application.
 - `complete_dataset/`: Contains dataset provided by [trashNet](https://github.com/garythung/trashnet.git)
-- `helper_split_train_val.py`: Scripts to split the dataset into train and validation sets(you need to extract `complete_dataset` first).
+- `helper_split_train_val.py`: Scripts to split and resize(640x640) the dataset into train and validation sets(you need to extract `complete_dataset` first).
 - `train_classifier.py`: Script to train the classifier(you need to split train/val first).
 
 ### main app :

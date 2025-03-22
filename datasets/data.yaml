@@ -1,0 +1,9 @@
+path: ../YOLO_TEST/dataset
+train: images/train2
+val: images/val22
+names: 
+  0: cardboard
+  1: glass
+  2: metal
+  3: paper
+  4: plastic
