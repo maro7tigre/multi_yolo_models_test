@@ -437,7 +437,7 @@ class YOLOImageAnalyzerApp:
     def get_random_images(self):
         """Get random images from dataset/val subdirectories"""
         # Check if dataset/val exists
-        dataset_path = os.path.join('.', 'dataset', 'val')
+        dataset_path = os.path.join('.', 'datasets', 'images', 'val')
         if not os.path.isdir(dataset_path):
             messagebox.showwarning(
                 "Dataset Not Found", 

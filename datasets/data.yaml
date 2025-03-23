@@ -1,9 +1,14 @@
-path: ../YOLO_TEST/dataset
-train: images/train2
-val: images/val22
-names: 
-  0: cardboard
-  1: glass
-  2: metal
-  3: paper
-  4: plastic
+# Root directory for the dataset (relative or absolute)
+path: .
+
+# Relative paths to image folders within the dataset directory
+train: images/train
+val: images/val
+# Optionally include test images for evaluation
+test: # optional
+
+# Number of object classes
+nc: 5
+
+# Class names in the order of their indices (starting with 0)
+names: [cardboard, glass, metal, paper, plastic]

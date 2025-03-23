@@ -1,12 +1,12 @@
 task: classify
 mode: train
-model: yolov8x-cls.yaml
-data: C://Users//marou//Documents//Github//YOLO_TEST//data.yaml
+model: yolov8x-cls.pt
+data: images
 epochs: 50
 time: null
 patience: 100
 batch: 16
-imgsz: 224
+imgsz: 640
 save: true
 save_period: -1
 cache: false
@@ -15,7 +15,7 @@ workers: 8
 project: null
 name: train
 exist_ok: false
-pretrained: yolov8x-cls.pt
+pretrained: true
 optimizer: auto
 verbose: true
 seed: 0
