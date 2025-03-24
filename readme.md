@@ -40,8 +40,29 @@ pip install tensorflow  # For TF/Keras models
 - `main_cam.py`: The main script to run the application for camera input.
 - `main_img.py`: The main script to run the application for images input.
 - `core.py`: The core script required for the main scripts...
+- `multimodel_llm.py`: The script to run the LLMs experimenting application.
+
+## 5. LLM experimentation
+
+Create a `credentials.py` file in the root directory of the project with the following content:
+
+```python
+
+# API credentials
+API_KEY = "YOUR_API_KEY"
+
+# Function to get API key
+def get_api_key():
+    return API_KEY
+
+```
+
+Make sure to:
+3. Create an API key from [Gemini-API](https://console.cloud.google.com/apis/)
+2. Replace the placeholder values with your actual API keys
 
 
-## 5. Aknowledgements
+## 6. Aknowledgements
 
 the `dataset/` and `complete_dataset` directory is provided by [trashNet](https://github.com/garythung/trashnet.git) under MIT License.
+

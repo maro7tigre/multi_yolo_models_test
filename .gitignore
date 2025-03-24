@@ -170,3 +170,4 @@ test_images/
 .draft*
 *.jpg
 *.npy
+credentials.py
